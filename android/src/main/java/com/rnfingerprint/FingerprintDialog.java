@@ -13,6 +13,9 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import java.util.Timer;
+import java.util.TimerTask;
+
 import com.facebook.react.bridge.ReadableMap;
 
 public class FingerprintDialog extends DialogFragment implements FingerprintHandler.Callback {
@@ -25,6 +28,13 @@ public class FingerprintDialog extends DialogFragment implements FingerprintHand
     private String authReason;
     private int dialogColor = 0;
     private String dialogTitle = "";
+
+    private String feedbackAwaiting = "Touch sensor";
+    private String feedbackNotRecognised = "Not recognised";
+    private String feedbackRecognised = "Fingerprint recognised";
+    private String feedbackTooManyAttempts = "Too many attempts. Try again later.";
+
+    private int countInvalid = 0;
 
     @Override
     public void onAttach(Context context) {
@@ -51,6 +61,9 @@ public class FingerprintDialog extends DialogFragment implements FingerprintHand
         if (this.dialogColor != 0) {
             mFingerprintImage.setColorFilter(this.dialogColor);
         }
+
+        final TextView mfeedbackText = (TextView) v.findViewById(R.id.feedback_text);
+        mfeedbackText.setText(this.feedbackAwaiting);
 
         final Button mCancelButton = (Button) v.findViewById(R.id.cancel_button);
         mCancelButton.setOnClickListener(new View.OnClickListener() {
@@ -117,6 +130,19 @@ public class FingerprintDialog extends DialogFragment implements FingerprintHand
             return;
         }
 
+        if (config.hasKey("feedbackAwaiting")) {
+            this.feedbackAwaiting = config.getString("feedbackAwaiting");
+        }
+        if (config.hasKey("feedbackNotRecognised")) {
+            this.feedbackNotRecognised = config.getString("feedbackNotRecognised");
+        }
+        if (config.hasKey("feedbackRecognised")) {
+            this.feedbackRecognised = config.getString("feedbackRecognised");
+        }
+        if (config.hasKey("feedbackTooManyAttempts")) {
+            this.feedbackTooManyAttempts = config.getString("feedbackTooManyAttempts");
+        }
+
         if (config.hasKey("title")) {
             this.dialogTitle = config.getString("title");
         }
@@ -136,16 +162,41 @@ public class FingerprintDialog extends DialogFragment implements FingerprintHand
 
     @Override
     public void onAuthenticated() {
+
+        final TextView feedbackText = (TextView) getView().findViewById(R.id.feedback_text);
+        feedbackText.setText(this.feedbackRecognised);
         this.isAuthInProgress = false;
+
+        new java.util.Timer().schedule(
+                new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        close();
+                    }
+                },
+                1000
+        );
+    }
+
+    public void close() {
         this.dialogCallback.onAuthenticated();
         dismiss();
     }
 
     @Override
     public void onError(String errorString) {
-        this.isAuthInProgress = false;
-        this.dialogCallback.onError(errorString);
-        dismiss();
+
+        final TextView feedbackText = (TextView) getView().findViewById(R.id.feedback_text);
+        this.countInvalid++;
+        if (this.countInvalid > 4) {
+            feedbackText.setText(this.feedbackTooManyAttempts);
+            this.isAuthInProgress = false;
+            this.mFingerprintHandler.endAuth();
+        }
+        else {
+            feedbackText.setText(this.feedbackNotRecognised);
+            this.mFingerprintHandler.startAuth(mCryptoObject);
+        }
     }
 
     @Override
